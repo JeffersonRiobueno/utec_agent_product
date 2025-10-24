@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  agent_product:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8100:8000"
+    volumes:
+      - .:/app
+
+
+networks:
+    default:
+        external:
+            name: cluster

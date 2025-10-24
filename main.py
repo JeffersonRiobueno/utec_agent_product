@@ -8,8 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatOllama
-from langchain_classic.agents.tool_calling_agent.base import create_tool_calling_agent
-from langchain_classic.agents import AgentExecutor
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 
 from vector.vector import products_tool
 
@@ -24,43 +23,56 @@ SYSTEM_PROMPT = (
 
 app = FastAPI()
 
+DEFAULT_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()  # openai | ollama | gemini
+DEFAULT_MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")          # por proveedor
+DEFAULT_TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.2"))
+
+# (Opcional) URLs/keys por proveedor
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # requerido si usas gemini
+
 class ProductAgentRequest(BaseModel):
     text: str
-    provider: Optional[str] = "gemini"
-    model: Optional[str] = None
-    temperature: Optional[float] = 0.2
+    provider: Optional[str] = DEFAULT_PROVIDER
+    model: Optional[str] = DEFAULT_MODEL
+    temperature: Optional[float] = DEFAULT_TEMPERATURE
 
 class ProductAgentResponse(BaseModel):
     result: str
 
-def get_llm(provider: str, model: Optional[str], temperature: float):
+
+
+# =========================
+# Fábrica de LLMs
+# =========================
+def make_llm(
+    provider: str,
+    model: str,
+    temperature: float
+):
+    provider = (provider or DEFAULT_PROVIDER).lower()
+
+    if provider == "openai":
+        # Requiere: OPENAI_API_KEY
+        return ChatOpenAI(model=model, temperature=temperature)
+
+    if provider == "ollama":
+        # Requiere: Ollama corriendo localmente o remoto
+        # Modelos típicos: "llama3.1", "qwen2.5", "phi3", etc.
+        return ChatOllama(model=model, base_url=OLLAMA_BASE_URL, temperature=temperature)
+
     if provider == "gemini":
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
+        # Requiere: GOOGLE_API_KEY
+        if not GOOGLE_API_KEY:
             raise RuntimeError("Falta GOOGLE_API_KEY para usar Gemini.")
-        return ChatGoogleGenerativeAI(
-            model=model or "gemini-2.5-flash",
-            api_key=api_key,
-            temperature=temperature,
-        )
-    elif provider == "openai":
-        return ChatOpenAI(
-            model=model or "gpt-4o-mini",
-            temperature=temperature,
-        )
-    elif provider == "ollama":
-        base_url = os.environ.get("OLLAMA_BASE_URL")
-        return ChatOllama(
-            model=model or "llama3",
-            base_url=base_url,
-            temperature=temperature,
-        )
-    else:
-        raise ValueError(f"Proveedor no soportado: {provider}")
+        return ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=GOOGLE_API_KEY)
+
+    raise ValueError(f"Proveedor LLM no soportado: {provider}. Usa: openai | ollama | gemini")
 
 @app.post("/products_agent_search", response_model=ProductAgentResponse)
 def products_agent_endpoint(req: ProductAgentRequest):
-    llm = get_llm(req.provider, req.model, req.temperature)
+    
+    llm = make_llm(req.provider, req.model, req.temperature)
     tools = [products_tool]
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
@@ -78,4 +90,4 @@ def products_agent_endpoint(req: ProductAgentRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
