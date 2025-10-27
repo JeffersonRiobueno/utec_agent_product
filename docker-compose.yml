@@ -9,6 +9,8 @@ services:
     volumes:
       - .:/app
 
+    networks:
+    - cluster
 
 networks:
   cluster:
