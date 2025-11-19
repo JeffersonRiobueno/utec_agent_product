@@ -41,3 +41,5 @@ ollama>=0.1.9
 # Extra utilities
 # ============================
 tqdm>=4.66.5
+requests>=2.31.0
+sseclient-py>=1.8.0

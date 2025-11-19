@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from qdrant_client import QdrantClient
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_qdrant import Qdrant
+from langchain_qdrant import QdrantVectorStore
 from langchain_core.tools import Tool
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_community.embeddings import OllamaEmbeddings
@@ -45,12 +45,12 @@ else:
 def _client() -> QdrantClient:
     return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-def get_qdrant_collection(name: str) -> Qdrant:
+def get_qdrant_collection(name: str) -> QdrantVectorStore:
     client = _client()
-    return Qdrant(
+    return QdrantVectorStore(
         client=client,
         collection_name=name,
-        embeddings=EMB,
+        embedding=EMB,
     )
 
 def get_llm():
@@ -71,7 +71,7 @@ def classify_query_category(query: str) -> str:
     llm = get_llm()
     prompt = (
         "Eres un asistente que clasifica consultas de productos en categorías del catálogo. "
-        "Las categorías posibles son: calzado, ropa, accesorios. "
+        "Las categorías posibles son: calzado, ropa, accesorios, pulseras "
         "Dada la consulta del usuario, responde SOLO con la categoría más relevante, sin explicaciones ni adornos. "
         "Si no corresponde a ninguna, responde SOLO con 'ninguna'.\n\n"
         f"Consulta: {query}\nCategoría:"
@@ -91,7 +91,7 @@ def classify_query_category(query: str) -> str:
         else:
             # Ollama: prompt plano
             category = llm.invoke(prompt).strip().lower()
-        if category in ["calzado", "ropa", "accesorios"]:
+        if category in ["calzado", "ropa", "accesorios", "pulseras"]:
             return category
         return ""
     except Exception as e:
@@ -131,43 +131,36 @@ def get_products_rag(query: str) -> str:
     """
     Recupera información relevante del vectorstore 'catalog_kb' (productos)
     para la consulta dada y devuelve un texto combinado.
-    Si el LLM puede mapear la consulta a una categoría, filtra por metadata.category.
-    Si no, usa búsqueda vectorial.
+    Siempre filtra por stock_status="instock".
+    Si el LLM puede mapear la consulta a una categoría, filtra también por category.
+    Si no hay resultados con categoría, hace fallback a solo stock_status.
     """
     category = classify_query_category(query)
+    vs = get_qdrant_collection("catalog_kb")
+    
+    # Filtro base: siempre stock_status
+    filter_dict = {
+        "must": [
+            {"key": "metadata.stock_status", "match": {"value": "instock"}}
+        ]
+    }
+    
+    # Agregar categoría si existe
     if category:
-        print(f"[INFO] El LLM clasificó la consulta en la categoría: {category}")
-        client = _client()
-        from qdrant_client.http import models as rest
-        response = client.scroll(
-            collection_name="catalog_kb",
-            limit=20,
-            with_payload=True,
-            scroll_filter=rest.Filter(
-                must=[
-                    rest.FieldCondition(
-                        key="metadata.category",
-                        match=rest.MatchValue(value=category)
-                    )
-                ]
-            )
-        )
-        points = response[0]
-        if not points:
-            return f"No se encontraron productos en la categoría '{category}'."
-        class DummyDoc:
-            def __init__(self, page_content, metadata):
-                self.page_content = page_content
-                self.metadata = metadata
-        docs = []
-        for p in points:
-            pc = p.payload.get("page_content", "")
-            meta = p.payload.get("metadata", {})
-            docs.append(DummyDoc(pc, meta))
-        return _combine_docs_text(docs)
-    # Si no, usar vector search normal
-    retriever = products_retriever(k=5)
-    results = retriever.invoke(query)
+        filter_dict["must"].append({"key": "metadata.category", "match": {"value": category}})
+        print(f"[INFO] Filtrando por categoría: {category} y stock_status: instock")
+    else:
+        print("[INFO] Filtrando solo por stock_status: instock")
+    
+    # Buscar con filtro
+    results = vs.similarity_search(query, k=20, filter=filter_dict)
+    
+    # Si no hay resultados y se filtró por categoría, quitar categoría y buscar de nuevo
+    if not results and category:
+        print(f"[INFO] No se encontraron resultados con categoría {category}, haciendo fallback a solo stock_status")
+        filter_dict["must"] = [{"key": "metadata.stock_status", "match": {"value": "instock"}}]
+        results = vs.similarity_search(query, k=20, filter=filter_dict)
+    
     return _combine_docs_text(results)
 
 def get_other_rag(query: str) -> str:
