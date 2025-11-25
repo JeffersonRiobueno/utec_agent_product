@@ -116,7 +116,7 @@ curl -X POST http://localhost:8100/products_agent_search \
 │
 ├── vector/
 │   ├── __init__.py
-│   └── vector.py              # Tools RAG: deep_agent, products, other
+│   └── vector.py              # Tools RAG: deep_agent, products
 │
 ├── deep_agent/                # ⭐ NUEVO: DeepAgent + Neo4j
 │   ├── __init__.py

@@ -109,9 +109,6 @@ def products_retriever(k: int = 3):
     vs = get_qdrant_collection("catalog_kb")
     return vs.as_retriever(search_kwargs={"k": k})
 
-def other_retriever(k: int = 3):
-    vs = get_qdrant_collection("other_kb")
-    return vs.as_retriever(search_kwargs={"k": k})
 
 # ==========================
 # Funciones RAG por dominio
@@ -185,13 +182,6 @@ def get_products_qdrant_list(query: str, k: int = 5) -> List[dict]:
     
     return products
 
-def get_other_rag(query: str) -> str:
-    print(f"[TOOL] 📚 other_retrieval_tool invocado con query: '{query}'")
-    retriever = other_retriever(k=5)
-    results = retriever.invoke(query)
-    result_text = _combine_docs_text(results)
-    print(f"[TOOL] ✅ other_retrieval_tool completado (longitud: {len(result_text)})")
-    return result_text
 
 def products_tool_wrapper(query: str):
     print(f"[TOOL] 🛍️  products_retrieval_tool invocado con query: '{query}'")
@@ -209,15 +199,6 @@ products_tool = Tool(
     ),
 )
 
-other_tool = Tool(
-    name="other_retrieval_tool",
-    func=get_other_rag,
-    description=(
-        "Usa esta herramienta para responder preguntas de la base 'other_kb'. "
-        "La entrada es una consulta en texto; la salida es un resumen concatenado "
-        "de los documentos relevantes en 'other_kb'."
-    ),
-)
 
 # ==========================
 # DeepAgent Tool Integration
@@ -314,4 +295,4 @@ deep_agent_tool = Tool(
     ),
 )
 
-RETRIEVAL_TOOLS = [deep_agent_tool, products_tool, other_tool]
+RETRIEVAL_TOOLS = [deep_agent_tool, products_tool]

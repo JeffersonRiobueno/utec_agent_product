@@ -20,7 +20,6 @@ SYSTEM_PROMPT = (
     "Tienes acceso a múltiples herramientas:\n"
     "- deep_agent_search_tool: Para consultas complejas (comparaciones, similitudes, recomendaciones)\n"
     "- products_retrieval_tool: Para búsquedas simples de productos\n"
-    "- other_retrieval_tool: Para información general no relacionada con productos\n\n"
     "IMPORTANTE: Para consultas como 'similar a...', 'comparar... vs...', 'más barato que...', "
     "'lo mejor para...', SIEMPRE usa deep_agent_search_tool primero.\n"
     "Cuando tengas la respuesta, proporciona la información del producto y su stock si está disponible."
@@ -79,7 +78,7 @@ def products_agent_endpoint(req: ProductAgentRequest):
     print(f"[API] Nueva consulta recibida: '{req.text}' (provider: {req.provider}, model: {req.model})")
     
     llm = make_llm(req.provider, req.model, req.temperature)
-    tools = RETRIEVAL_TOOLS  # Ahora incluye deep_agent_tool, products_tool, other_tool
+    tools = RETRIEVAL_TOOLS  # Ahora incluye deep_agent_tool, products_tool
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
         ("human", "{input}"),

@@ -111,8 +111,7 @@ LangChain Agent (main.py)
    ↓
 RETRIEVAL_TOOLS:
    ├─ deep_agent_search_tool (COMPLETO) ← Para consultas complejas
-   ├─ products_retrieval_tool             ← Para búsquedas simples
-   └─ other_retrieval_tool               ← Para info general
+   └─ products_retrieval_tool             ← Para búsquedas simples
    
 deep_agent_search_tool
    ↓
