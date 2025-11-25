@@ -101,11 +101,11 @@ def classify_query_category(query: str) -> str:
 # ===================
 # Retrievers por KB
 # ===================
-def products_retriever(k: int = 5):
+def products_retriever(k: int = 3):
     vs = get_qdrant_collection("catalog_kb")
     return vs.as_retriever(search_kwargs={"k": k})
 
-def other_retriever(k: int = 5):
+def other_retriever(k: int = 3):
     vs = get_qdrant_collection("other_kb")
     return vs.as_retriever(search_kwargs={"k": k})
 
@@ -132,34 +132,20 @@ def get_products_rag(query: str) -> str:
     Recupera información relevante del vectorstore 'catalog_kb' (productos)
     para la consulta dada y devuelve un texto combinado.
     Siempre filtra por stock_status="instock".
-    Si el LLM puede mapear la consulta a una categoría, filtra también por category.
-    Si no hay resultados con categoría, hace fallback a solo stock_status.
     """
-    category = classify_query_category(query)
     vs = get_qdrant_collection("catalog_kb")
     
-    # Filtro base: siempre stock_status
+    # Filtro: solo stock_status
     filter_dict = {
         "must": [
             {"key": "metadata.stock_status", "match": {"value": "instock"}}
         ]
     }
     
-    # Agregar categoría si existe
-    if category:
-        filter_dict["must"].append({"key": "metadata.category", "match": {"value": category}})
-        print(f"[INFO] Filtrando por categoría: {category} y stock_status: instock")
-    else:
-        print("[INFO] Filtrando solo por stock_status: instock")
+    print("[INFO] Filtrando por stock_status: instock")
     
     # Buscar con filtro
     results = vs.similarity_search(query, k=20, filter=filter_dict)
-    
-    # Si no hay resultados y se filtró por categoría, quitar categoría y buscar de nuevo
-    if not results and category:
-        print(f"[INFO] No se encontraron resultados con categoría {category}, haciendo fallback a solo stock_status")
-        filter_dict["must"] = [{"key": "metadata.stock_status", "match": {"value": "instock"}}]
-        results = vs.similarity_search(query, k=20, filter=filter_dict)
     
     return _combine_docs_text(results)
 
