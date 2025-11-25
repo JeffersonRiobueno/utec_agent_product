@@ -28,12 +28,19 @@ class Neo4jTool:
     
     def execute_cypher(self, query: str, parameters: Dict = None) -> List[Dict]:
         """Ejecuta una consulta Cypher y retorna resultados."""
+        print(f"[NEO4J] 🔍 Ejecutando consulta Cypher: {query.strip()[:100]}...")
+        if parameters:
+            print(f"[NEO4J] 📋 Parámetros: {parameters}")
+        
         with self.driver.session() as session:
             result = session.run(query, parameters or {})
-            return [record.data() for record in result]
+            records = [record.data() for record in result]
+            print(f"[NEO4J] 📊 Consulta completada - {len(records)} registros retornados")
+            return records
     
     def find_product_by_name(self, product_name: str) -> Optional[Dict]:
         """Busca un producto por nombre (coincidencia parcial)."""
+        print(f"[NEO4J] 🔍 Buscando producto por nombre: '{product_name}'")
         query = """
         MATCH (p:Producto)
         WHERE toLower(p.name) CONTAINS toLower($name)
@@ -42,10 +49,15 @@ class Neo4jTool:
         LIMIT 1
         """
         results = self.execute_cypher(query, {"name": product_name})
+        if results:
+            print(f"[NEO4J] ✅ Producto encontrado: {results[0]['name']}")
+        else:
+            print(f"[NEO4J] ⚠️  Producto no encontrado: '{product_name}'")
         return results[0] if results else None
     
     def find_similar_products(self, product_name: str, limit: int = 5) -> List[Dict]:
         """Encuentra productos similares usando la relación SIMILAR_A."""
+        print(f"[NEO4J] 🔗 Buscando productos similares a: '{product_name}' (límite: {limit})")
         query = """
         MATCH (p1:Producto)-[:SIMILAR_A]-(p2:Producto)
         WHERE toLower(p1.name) CONTAINS toLower($name)
@@ -53,15 +65,20 @@ class Neo4jTool:
         RETURN DISTINCT p2.id as id, p2.name as name, p2.price as price, p2.stock_status as stock_status
         LIMIT $limit
         """
-        return self.execute_cypher(query, {"name": product_name, "limit": limit})
+        results = self.execute_cypher(query, {"name": product_name, "limit": limit})
+        print(f"[NEO4J] ✅ Encontrados {len(results)} productos similares")
+        return results
     
     def find_cheaper_alternatives(self, product_name: str, limit: int = 5) -> List[Dict]:
         """Encuentra alternativas más baratas usando la relación MAS_BARATO_QUE."""
+        print(f"[NEO4J] 💰 Buscando alternativas más baratas que: '{product_name}' (límite: {limit})")
         # Primero buscar el producto de referencia
         reference = self.find_product_by_name(product_name)
         if not reference:
+            print(f"[NEO4J] ⚠️  No se pudo encontrar producto de referencia: '{product_name}'")
             return []
         
+        print(f"[NEO4J] 📋 Precio de referencia: USD {reference['price']}")
         query = """
         MATCH (p:Producto)
         WHERE p.price < $reference_price
@@ -70,17 +87,24 @@ class Neo4jTool:
         ORDER BY p.price ASC
         LIMIT $limit
         """
-        return self.execute_cypher(query, {"reference_price": reference['price'], "limit": limit})
+        results = self.execute_cypher(query, {"reference_price": reference['price'], "limit": limit})
+        print(f"[NEO4J] ✅ Encontradas {len(results)} alternativas más económicas")
+        return results
     
     def compare_products(self, product1_name: str, product2_name: str) -> Dict:
         """Compara dos productos y retorna sus atributos."""
+        print(f"[NEO4J] ⚖️  Comparando productos: '{product1_name}' vs '{product2_name}'")
         p1 = self.find_product_by_name(product1_name)
         p2 = self.find_product_by_name(product2_name)
         
         if not p1 or not p2:
+            error_msg = f"No se encontraron uno o ambos productos: {product1_name}, {product2_name}"
+            print(f"[NEO4J] ❌ Error en comparación: {error_msg}")
             return {
-                "error": f"No se encontraron uno o ambos productos: {product1_name}, {product2_name}"
+                "error": error_msg
             }
+        
+        print(f"[NEO4J] 📊 Comparando: {p1['name']} (USD {p1['price']}) vs {p2['name']} (USD {p2['price']})")
         
         # Obtener categorías de ambos productos
         query = """
@@ -90,7 +114,7 @@ class Neo4jTool:
         p1_cats = self.execute_cypher(query, {"product_id": p1['id']})
         p2_cats = self.execute_cypher(query, {"product_id": p2['id']})
         
-        return {
+        result = {
             "product1": {
                 "name": p1['name'],
                 "price": p1['price'],
@@ -106,9 +130,13 @@ class Neo4jTool:
             "price_difference": abs(p1['price'] - p2['price']),
             "cheaper": p1['name'] if p1['price'] < p2['price'] else p2['name']
         }
+        
+        print(f"[NEO4J] ✅ Comparación completada - Diferencia: USD {result['price_difference']}")
+        return result
     
     def find_by_category(self, category: str, limit: int = 10) -> List[Dict]:
         """Encuentra productos por categoría."""
+        print(f"[NEO4J] 📂 Buscando productos por categoría: '{category}' (límite: {limit})")
         query = """
         MATCH (p:Producto)-[:PERTENECE_A]->(c:Categoria)
         WHERE toLower(c.name) CONTAINS toLower($category)
@@ -117,7 +145,9 @@ class Neo4jTool:
         ORDER BY p.price ASC
         LIMIT $limit
         """
-        return self.execute_cypher(query, {"category": category, "limit": limit})
+        results = self.execute_cypher(query, {"category": category, "limit": limit})
+        print(f"[NEO4J] ✅ Encontrados {len(results)} productos en categoría '{category}'")
+        return results
     
     def format_results(self, results: List[Dict], query_type: str = "general") -> str:
         """Formatea los resultados para presentación."""

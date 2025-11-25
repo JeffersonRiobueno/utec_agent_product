@@ -131,7 +131,7 @@ def _combine_docs_text(docs: List) -> str:
     return "\n\n".join(lines)
 
 def get_products_rag(query: str) -> str:
-    print(f"[TOOL LOG] get_products_rag invocado con query: {query}")
+    print(f"[QDRANT] 🔍 Iniciando búsqueda semántica en catalog_kb: '{query}'")
     """
     Recupera información relevante del vectorstore 'catalog_kb' (productos)
     para la consulta dada y devuelve un texto combinado.
@@ -146,12 +146,16 @@ def get_products_rag(query: str) -> str:
         ]
     }
     
-    print("[INFO] Filtrando por stock_status: instock")
+    print("[QDRANT] 📋 Aplicando filtro: stock_status = 'instock'")
     
     # Buscar con filtro
     results = vs.similarity_search(query, k=20, filter=filter_dict)
     
-    return _combine_docs_text(results)
+    print(f"[QDRANT] 📊 Encontrados {len(results)} documentos relevantes")
+    result_text = _combine_docs_text(results)
+    print(f"[QDRANT] ✅ Búsqueda completada (longitud resultado: {len(result_text)})")
+    
+    return result_text
 
 def get_products_qdrant_list(query: str, k: int = 5) -> List[dict]:
     """
@@ -182,14 +186,18 @@ def get_products_qdrant_list(query: str, k: int = 5) -> List[dict]:
     return products
 
 def get_other_rag(query: str) -> str:
-    print(f"[TOOL LOG] get_other_rag invocado con query: {query}")
+    print(f"[TOOL] 📚 other_retrieval_tool invocado con query: '{query}'")
     retriever = other_retriever(k=5)
     results = retriever.invoke(query)
-    return _combine_docs_text(results)
+    result_text = _combine_docs_text(results)
+    print(f"[TOOL] ✅ other_retrieval_tool completado (longitud: {len(result_text)})")
+    return result_text
 
 def products_tool_wrapper(query: str):
-    print(f"[TOOL LOG] products_tool_wrapper query: {query}")
-    return get_products_rag(query)
+    print(f"[TOOL] 🛍️  products_retrieval_tool invocado con query: '{query}'")
+    result = get_products_rag(query)
+    print(f"[TOOL] ✅ products_retrieval_tool completado (longitud: {len(result)})")
+    return result
 
 products_tool = Tool(
     name="products_retrieval_tool",
@@ -219,58 +227,80 @@ def deep_agent_search(query: str) -> str:
     Herramienta que integra DeepAgent para consultas complejas.
     Usa razonamiento simbólico (Neo4j) y búsqueda semántica (Qdrant) según el plan.
     """
-    print(f"[DEEP AGENT] Evaluando consulta: {query}")
+    print(f"[DEEP AGENT] 🔍 Evaluando consulta: '{query}'")
     
     planner = DeepAgentPlanner(token_budget=2000)
     
     # Verificar si se debe activar DeepAgent
-    if not planner.should_activate_deep_agent(query):
-        print("[DEEP AGENT] Consulta simple detectada, usando búsqueda directa en Qdrant")
-        return get_products_rag(query)
+    should_activate = planner.should_activate_deep_agent(query)
+    print(f"[DEEP AGENT] 🤔 ¿Activar DeepAgent? {should_activate}")
+    
+    if not should_activate:
+        print("[DEEP AGENT] 📋 Consulta simple detectada, usando búsqueda directa en Qdrant")
+        result = get_products_rag(query)
+        print(f"[DEEP AGENT] ✅ Búsqueda Qdrant completada (longitud resultado: {len(result)})")
+        return result
     
     # Crear plan de ejecución
     plan = planner.create_plan(query)
-    print(f"[DEEP AGENT] Plan creado - Tipo: {plan.query_type}")
-    print(f"[DEEP AGENT] Parámetros extraídos: {plan.extracted_params}")
+    print(f"[DEEP AGENT] 📝 Plan creado - Tipo: {plan.query_type}")
+    print(f"[DEEP AGENT] 🔧 Parámetros extraídos: {plan.extracted_params}")
+    print(f"[DEEP AGENT] 🛠️  Herramientas a usar - Neo4j: {plan.use_neo4j}, Qdrant: {plan.use_qdrant}")
     
     # Definir funciones de herramientas para el plan
     def neo4j_executor(plan_obj):
         """Ejecuta consultas en Neo4j según el tipo de plan."""
+        print(f"[DEEP AGENT] 🗄️  Ejecutando consulta Neo4j - Tipo: {plan_obj.query_type}")
         neo4j_tool = get_neo4j_tool()
         
         if plan_obj.query_type == 'similarity':
             ref_product = plan_obj.extracted_params.get('reference_product', '')
+            print(f"[DEEP AGENT] 🔗 Buscando productos similares a: '{ref_product}'")
             results = neo4j_tool.find_similar_products(ref_product, limit=5)
+            print(f"[DEEP AGENT] ✅ Neo4j encontró {len(results)} productos similares")
             return results
         
         elif plan_obj.query_type == 'price_comparison':
             ref_product = plan_obj.extracted_params.get('reference_product', '')
+            print(f"[DEEP AGENT] 💰 Buscando alternativas más baratas que: '{ref_product}'")
             results = neo4j_tool.find_cheaper_alternatives(ref_product, limit=5)
+            print(f"[DEEP AGENT] ✅ Neo4j encontró {len(results)} alternativas más económicas")
             return results
         
         elif plan_obj.query_type == 'comparison':
             p1 = plan_obj.extracted_params.get('product1', '')
             p2 = plan_obj.extracted_params.get('product2', '')
+            print(f"[DEEP AGENT] ⚖️  Comparando productos: '{p1}' vs '{p2}'")
             results = neo4j_tool.compare_products(p1, p2)
+            print(f"[DEEP AGENT] ✅ Neo4j completó comparación")
             return results
         
         elif plan_obj.query_type == 'recommendation':
             use_case = plan_obj.extracted_params.get('use_case', '')
+            print(f"[DEEP AGENT] 🎯 Generando recomendaciones para: '{use_case}'")
             # Intentar buscar por categoría inferida del caso de uso
             results = neo4j_tool.find_by_category(use_case, limit=10)
+            print(f"[DEEP AGENT] ✅ Neo4j encontró {len(results)} recomendaciones")
             return results
         
+        print(f"[DEEP AGENT] ⚠️  Tipo de consulta no reconocido: {plan_obj.query_type}")
         return []
     
     def qdrant_executor(plan_obj):
         """Ejecuta búsqueda semántica en Qdrant si es necesario."""
+        print(f"[DEEP AGENT] 🔍 Ejecutando búsqueda semántica Qdrant - Tipo: {plan_obj.query_type}")
         # Para planes que necesitan complementar con búsqueda semántica
         if plan_obj.query_type in ['recommendation', 'comparison', 'similarity']:
-            return get_products_qdrant_list(query, k=5)
+            results = get_products_qdrant_list(query, k=5)
+            print(f"[DEEP AGENT] ✅ Qdrant encontró {len(results)} productos relevantes")
+            return results
+        print(f"[DEEP AGENT] ⏭️  Qdrant no necesario para tipo: {plan_obj.query_type}")
         return []
     
     # Ejecutar plan
+    print(f"[DEEP AGENT] 🚀 Ejecutando plan completo...")
     result = planner.execute_plan(plan, neo4j_executor, qdrant_executor)
+    print(f"[DEEP AGENT] 🎉 Plan ejecutado exitosamente (longitud resultado: {len(result)})")
     return result
 
 deep_agent_tool = Tool(

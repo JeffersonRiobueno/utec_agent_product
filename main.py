@@ -76,6 +76,7 @@ def make_llm(
 
 @app.post("/products_agent_search", response_model=ProductAgentResponse)
 def products_agent_endpoint(req: ProductAgentRequest):
+    print(f"[API] Nueva consulta recibida: '{req.text}' (provider: {req.provider}, model: {req.model})")
     
     llm = make_llm(req.provider, req.model, req.temperature)
     tools = RETRIEVAL_TOOLS  # Ahora incluye deep_agent_tool, products_tool, other_tool
@@ -86,12 +87,19 @@ def products_agent_endpoint(req: ProductAgentRequest):
     ])
     agent = create_tool_calling_agent(llm, tools, prompt)
     executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+    
+    print(f"[API] Ejecutando agente con {len(tools)} herramientas disponibles")
     # Ejecuta el agente de forma completamente automática
     result = executor.invoke({"input": req.text})
+    
     # El resultado puede estar en diferentes campos según el modelo
     if isinstance(result, dict) and "output" in result:
-        return ProductAgentResponse(result=str(result["output"]))
-    return ProductAgentResponse(result=str(result))
+        final_result = str(result["output"])
+    else:
+        final_result = str(result)
+    
+    print(f"[API] Respuesta generada (longitud: {len(final_result)} caracteres)")
+    return ProductAgentResponse(result=final_result)
 
 if __name__ == "__main__":
     import uvicorn
