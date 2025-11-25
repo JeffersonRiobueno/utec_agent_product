@@ -10,9 +10,29 @@ services:
       - .:/app
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
     networks:
     - cluster
+
+  neo4j:
+    image: neo4j:5.20
+    container_name: neo4j_product_agent
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/password  # Cambia 'password' por una segura
+      NEO4J_PLUGINS: '["graph-data-science"]'  # Opcional para algoritmos de grafo
+    volumes:
+      - ./neo4j_data:/data
+      - ./neo4j_logs:/logs
+      - ./neo4j_plugins:/var/lib/neo4j/plugins
+    networks:
+      - cluster
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_plugins:
 
 networks:
   cluster:

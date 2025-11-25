@@ -43,3 +43,8 @@ ollama>=0.1.9
 tqdm>=4.66.5
 requests>=2.31.0
 sseclient-py>=1.8.0
+
+# ============================
+# Neo4j for symbolic reasoning
+# ============================
+neo4j>=5.20.0

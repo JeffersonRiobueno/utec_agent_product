@@ -10,14 +10,19 @@ from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatOllama
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 
-from vector.vector import products_tool
+from vector.vector import RETRIEVAL_TOOLS
 
 load_dotenv()
 
 SYSTEM_PROMPT = (
     "Eres un asistente experto en buscar productos de la tienda de zapatos. "
     "Ayudas a usuarios a responder preguntas sobre productos y encontrar información relevante. "
-    "Usas herramientas para buscar información relevante y responder consultas de usuarios. "
+    "Tienes acceso a múltiples herramientas:\n"
+    "- deep_agent_search_tool: Para consultas complejas (comparaciones, similitudes, recomendaciones)\n"
+    "- products_retrieval_tool: Para búsquedas simples de productos\n"
+    "- other_retrieval_tool: Para información general no relacionada con productos\n\n"
+    "IMPORTANTE: Para consultas como 'similar a...', 'comparar... vs...', 'más barato que...', "
+    "'lo mejor para...', SIEMPRE usa deep_agent_search_tool primero.\n"
     "Cuando tengas la respuesta, proporciona la información del producto y su stock si está disponible."
 )
 
@@ -73,7 +78,7 @@ def make_llm(
 def products_agent_endpoint(req: ProductAgentRequest):
     
     llm = make_llm(req.provider, req.model, req.temperature)
-    tools = [products_tool]
+    tools = RETRIEVAL_TOOLS  # Ahora incluye deep_agent_tool, products_tool, other_tool
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
         ("human", "{input}"),
