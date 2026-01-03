@@ -12,17 +12,30 @@ from langchain.agents import create_tool_calling_agent, AgentExecutor
 
 from vector.vector import RETRIEVAL_TOOLS
 
+# Imports para health checks
+import os
+import re
+from typing import Tuple
+try:
+    from vector.vector import _client
+except Exception:
+    _client = None
+try:
+    from neo4j import GraphDatabase
+except Exception:
+    GraphDatabase = None
+
 load_dotenv()
 
 SYSTEM_PROMPT = (
-    "Eres un asistente experto en buscar productos de la tienda de zapatos. "
-    "Ayudas a usuarios a responder preguntas sobre productos y encontrar información relevante. "
-    "Tienes acceso a múltiples herramientas:\n"
-    "- deep_agent_search_tool: Para consultas complejas (comparaciones, similitudes, recomendaciones)\n"
-    "- products_retrieval_tool: Para búsquedas simples de productos\n"
-    "IMPORTANTE: Para consultas como 'similar a...', 'comparar... vs...', 'más barato que...', "
-    "'lo mejor para...', SIEMPRE usa deep_agent_search_tool primero.\n"
-    "Cuando tengas la respuesta, proporciona la información del producto y su stock si está disponible."
+    "Eres un asistente experto en ventas. "
+    "Tu objetivo es ayudar a los usuarios a encontrar el producto ideal. "
+    "Tienes acceso a una herramienta unificada: `unified_product_search_tool`. "
+    "INSTRUCCIÓN CRÍTICA: Tienes prohibido responder sobre disponibilidad de productos basándote en tu memoria o en el resumen de la conversación. "
+    "SIEMPRE debes usar la herramienta `unified_product_search_tool` para verificar el estado actual en tiempo real. "
+    "El resumen de la conversación es solo para mantener el hilo de la charla, pero la información de stock allí puede ser vieja o incorrecta. "
+    "Si el usuario insiste en un producto, BÚSCALO DE NUEVO con la herramienta. "
+    "Después de obtener los datos de la herramienta, responde de forma amable, persuasiva y profesional."
 )
 
 app = FastAPI()
@@ -37,6 +50,8 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # requerido si usas gemini
 
 class ProductAgentRequest(BaseModel):
     text: str
+    session_id: Optional[str] = None
+    context_summary: Optional[str] = None
     provider: Optional[str] = DEFAULT_PROVIDER
     model: Optional[str] = DEFAULT_MODEL
     temperature: Optional[float] = DEFAULT_TEMPERATURE
@@ -75,30 +90,87 @@ def make_llm(
 
 @app.post("/products_agent_search", response_model=ProductAgentResponse)
 def products_agent_endpoint(req: ProductAgentRequest):
-    print(f"[API] Nueva consulta recibida: '{req.text}' (provider: {req.provider}, model: {req.model})")
-    
+    print(f"[API] Nueva consulta recibida: '{req.text}' (provider: {req.provider}, model: {req.model}, session_id: {req.session_id})")
+    if req.context_summary:
+        print(f"[API] Context summary received: {req.context_summary}")
+
+    # Si el context_summary contiene indicios de error, realizar validaciones de salud y devolver diagnóstico
+    def _contains_error(text: str) -> bool:
+        if not text:
+            return False
+        patterns = [r"\berror\b", r"\bproblema\b", r"\bfailed\b", r"\bfallo\b", r"\bexception\b", r"server error", r"no se pudo", r"no puedo"]
+        combined = re.compile("|".join(patterns), flags=re.IGNORECASE)
+        return bool(combined.search(text))
+
+    def _check_qdrant() -> Tuple[bool, str]:
+        if _client is None:
+            return False, "Qdrant client no disponible en este entorno"
+        try:
+            client = _client()
+            cols = client.get_collections()
+            names = []
+            if hasattr(cols, "collections"):
+                names = [c.name for c in cols.collections]
+            elif isinstance(cols, dict) and "collections" in cols:
+                names = [c["name"] for c in cols["collections"]]
+            else:
+                names = []
+            if names:
+                if "catalog_kb" in names:
+                    return True, f"Qdrant reachable, collections: {names}"
+                else:
+                    return False, f"Qdrant reachable but 'catalog_kb' no existe. Collections: {names}"
+            return True, "Qdrant reachable (no list returned)"
+        except Exception as e:
+            return False, f"Qdrant check failed: {e}"
+
+    def _check_neo4j() -> Tuple[bool, str]:
+        uri = os.getenv("NEO4J_URI")
+        user = os.getenv("NEO4J_USER")
+        pwd = os.getenv("NEO4J_PASSWORD")
+        if not uri or not user or not pwd or GraphDatabase is None:
+            return False, "Neo4j not configured or driver not installed"
+        try:
+            driver = GraphDatabase.driver(uri, auth=(user, pwd))
+            with driver.session() as session:
+                _ = session.run("RETURN 1").single()
+            driver.close()
+            return True, "Neo4j reachable"
+        except Exception as e:
+            return False, f"Neo4j check failed: {e}"
+
+    # Si no hay indicios de error en el summary, proceder como antes
     llm = make_llm(req.provider, req.model, req.temperature)
     tools = RETRIEVAL_TOOLS  # Ahora incluye deep_agent_tool, products_tool
+
+    system_prompt = SYSTEM_PROMPT
+    if req.context_summary:
+        system_prompt = SYSTEM_PROMPT + "\n\n[HISTORIAL DE CHAT (SOLO PARA CONTEXTO, NO USAR PARA DATOS DE STOCK)]: " + req.context_summary
+
     prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
+        ("system", system_prompt),
         ("human", "{input}"),
         ("ai", "{agent_scratchpad}")
     ])
     agent = create_tool_calling_agent(llm, tools, prompt)
+    # Se elimina return_intermediate_steps=True para que el LLM procese la respuesta final
     executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
     
     print(f"[API] Ejecutando agente con {len(tools)} herramientas disponibles")
-    # Ejecuta el agente de forma completamente automática
+    # Ejecuta el agente usando SOLO el texto del usuario (sin context_summary)
     result = executor.invoke({"input": req.text})
     
-    # El resultado puede estar en diferentes campos según el modelo
+    # Usar siempre la salida procesada por el LLM (result["output"])
     if isinstance(result, dict) and "output" in result:
-        final_result = str(result["output"])
+        final_result = result["output"]
     else:
         final_result = str(result)
     
-    print(f"[API] Respuesta generada (longitud: {len(final_result)} caracteres)")
-    return ProductAgentResponse(result=final_result)
+    print(f"[API] Respuesta generada (longitud: {len(str(final_result))} caracteres)")
+    return ProductAgentResponse(result=str(final_result))
+    
+    print(f"[API] Respuesta generada (longitud: {len(str(final_result))} caracteres)")
+    return ProductAgentResponse(result=str(final_result))
 
 if __name__ == "__main__":
     import uvicorn

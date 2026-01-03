@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from qdrant_client import QdrantClient
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_qdrant import QdrantVectorStore
+from langchain.vectorstores import Qdrant
 from langchain_core.tools import Tool
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_community.embeddings import OllamaEmbeddings
@@ -49,12 +49,12 @@ else:
 def _client() -> QdrantClient:
     return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-def get_qdrant_collection(name: str) -> QdrantVectorStore:
+def get_qdrant_collection(name: str) -> Qdrant:
     client = _client()
-    return QdrantVectorStore(
+    return Qdrant(
         client=client,
         collection_name=name,
-        embedding=EMB,
+        embeddings=EMB,
     )
 
 def get_llm():
@@ -132,26 +132,35 @@ def get_products_rag(query: str) -> str:
     """
     Recupera información relevante del vectorstore 'catalog_kb' (productos)
     para la consulta dada y devuelve un texto combinado.
-    Siempre filtra por stock_status="instock".
+    Filtra por stock_status="instock" en código para compatibilidad con distintas versiones de clientes.
     """
-    vs = get_qdrant_collection("catalog_kb")
-    
-    # Filtro: solo stock_status
-    filter_dict = {
-        "must": [
-            {"key": "metadata.stock_status", "match": {"value": "instock"}}
-        ]
-    }
-    
-    print("[QDRANT] 📋 Aplicando filtro: stock_status = 'instock'")
-    
-    # Buscar con filtro
-    results = vs.similarity_search(query, k=20, filter=filter_dict)
-    
-    print(f"[QDRANT] 📊 Encontrados {len(results)} documentos relevantes")
-    result_text = _combine_docs_text(results)
+    try:
+        retriever = products_retriever(k=20)
+        docs = retriever.get_relevant_documents(query)
+    except Exception as e:
+        print(f"[QDRANT] Error al obtener documentos desde retriever: {e}")
+        # Fallback: intentar acceder directamente al vector store
+        try:
+            vs = get_qdrant_collection("catalog_kb")
+            docs = vs.similarity_search(query, k=20)
+        except Exception as e2:
+            print(f"[QDRANT] Fallback también falló: {e2}")
+            return "No se pudo obtener resultados de búsqueda en este momento."
+
+    # Filtrar por stock_status si está disponible en metadata
+    filtered = []
+    for d in docs:
+        md = getattr(d, "metadata", {}) or {}
+        if md.get("stock_status", "").lower() == "instock":
+            filtered.append(d)
+
+    if not filtered:
+        # Si no hay resultados filtrados, devolver primeros N resultados crudos
+        filtered = docs[:5]
+
+    print(f"[QDRANT] 📊 Encontrados {len(filtered)} documentos relevantes tras filtro")
+    result_text = _combine_docs_text(filtered)
     print(f"[QDRANT] ✅ Búsqueda completada (longitud resultado: {len(result_text)})")
-    
     return result_text
 
 def get_products_qdrant_list(query: str, k: int = 5) -> List[dict]:
@@ -183,7 +192,22 @@ def get_products_qdrant_list(query: str, k: int = 5) -> List[dict]:
     return products
 
 
-def products_tool_wrapper(query: str):
+def products_tool_wrapper(*args, **kwargs):
+    # Compatible con distintos formatos de invocación de Tool en diferentes versiones de LangChain
+    query = ""
+    if "input" in kwargs:
+        query = kwargs.get("input")
+    elif "query" in kwargs:
+        query = kwargs.get("query")
+    elif args:
+        first = args[0]
+        # Puede venir como lista de args: ['texto'] o como texto directamente
+        if isinstance(first, list) and len(first) > 0:
+            query = first[0]
+        else:
+            query = first
+
+    query = str(query or "").strip()
     print(f"[TOOL] 🛍️  products_retrieval_tool invocado con query: '{query}'")
     result = get_products_rag(query)
     print(f"[TOOL] ✅ products_retrieval_tool completado (longitud: {len(result)})")
@@ -193,9 +217,9 @@ products_tool = Tool(
     name="products_retrieval_tool",
     func=products_tool_wrapper,
     description=(
-        "Usa esta herramienta para responder preguntas sobre productos del catálogo. "
-        "La entrada es una consulta en texto; la salida es un resumen concatenado "
-        "de los documentos relevantes en 'catalog_kb'."
+        "Usa esta herramienta SOLO para búsquedas simples y directas de productos por nombre específico o descripción básica. "
+        "Ejemplos: 'muéstrame el collar X', 'qué precio tiene Y'. "
+        "NO uses para similitudes, comparaciones, alternativas o recomendaciones complejas."
     ),
 )
 
@@ -203,11 +227,26 @@ products_tool = Tool(
 # ==========================
 # DeepAgent Tool Integration
 # ==========================
-def deep_agent_search(query: str) -> str:
+def deep_agent_search(*args, **kwargs) -> str:
     """
     Herramienta que integra DeepAgent para consultas complejas.
     Usa razonamiento simbólico (Neo4j) y búsqueda semántica (Qdrant) según el plan.
+    Compatible con invocaciones que pasan args/config como dicts.
     """
+    # Extraer query de args/kwargs de forma robusta
+    query = ""
+    if "input" in kwargs:
+        query = kwargs.get("input")
+    elif "query" in kwargs:
+        query = kwargs.get("query")
+    elif args:
+        first = args[0]
+        if isinstance(first, list) and len(first) > 0:
+            query = first[0]
+        else:
+            query = first
+
+    query = str(query or "").strip()
     print(f"[DEEP AGENT] 🔍 Evaluando consulta: '{query}'")
     
     planner = DeepAgentPlanner(token_budget=2000)
@@ -285,14 +324,13 @@ def deep_agent_search(query: str) -> str:
     return result
 
 deep_agent_tool = Tool(
-    name="deep_agent_search_tool",
+    name="unified_product_search_tool",
     func=deep_agent_search,
     description=(
-        "Usa esta herramienta para consultas complejas sobre productos que requieren "
-        "razonamiento simbólico, comparaciones, recomendaciones o búsqueda de alternativas. "
-        "Ejemplos: 'similar a X', 'comparar X vs Y', 'más barato que X', 'lo mejor para correr'. "
-        "Activa automáticamente DeepAgent para planificación multi-stage y consultas en Neo4j."
+        "Herramienta MAESTRA para buscar productos. Úsala SIEMPRE para CUALQUIER consulta sobre productos, "
+        "ya sea simple (precio, stock) o compleja (similitudes, comparaciones, recomendaciones). "
+        "El sistema decidirá internamente si usar búsqueda simple o razonamiento avanzado."
     ),
 )
 
-RETRIEVAL_TOOLS = [deep_agent_tool, products_tool]
+RETRIEVAL_TOOLS = [deep_agent_tool]

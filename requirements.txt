@@ -14,16 +14,15 @@ redis>=5.0.7
 # ============================
 # Qdrant client + LangChain wrapper
 # ============================
-qdrant-client>=1.9.1
-langchain-qdrant>=0.1.2
+qdrant-client==1.6.9
 
 # ============================
 # LangChain core ecosystem
 # ============================
-langchain>=0.2.10
-langchain-core>=0.2.26
-langchain-community>=0.2.10
-langchain-openai>=0.1.20
+langchain==0.1.20
+langchain-core>=0.1.33
+langchain-community>=0.0.38
+langchain-openai>=0.0.8
 openai>=1.37.0
 
 # ============================

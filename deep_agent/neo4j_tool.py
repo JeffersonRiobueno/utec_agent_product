@@ -55,9 +55,9 @@ class Neo4jTool:
             print(f"[NEO4J] ⚠️  Producto no encontrado: '{product_name}'")
         return results[0] if results else None
     
-    def find_similar_products(self, product_name: str, limit: int = 5) -> List[Dict]:
+    def find_similar_products(self, product_name: str, limit: int = 3) -> List[Dict]:
         """Encuentra productos similares usando la relación SIMILAR_A."""
-        print(f"[NEO4J] 🔗 Buscando productos similares a: '{product_name}' (límite: {limit})")
+        print(f"[NEO4J] 🔗 Buscando productos similares a: '{product_name}' (len: {len(product_name)}) (límite: {limit})")
         query = """
         MATCH (p1:Producto)-[:SIMILAR_A]-(p2:Producto)
         WHERE toLower(p1.name) CONTAINS toLower($name)
@@ -69,7 +69,7 @@ class Neo4jTool:
         print(f"[NEO4J] ✅ Encontrados {len(results)} productos similares")
         return results
     
-    def find_cheaper_alternatives(self, product_name: str, limit: int = 5) -> List[Dict]:
+    def find_cheaper_alternatives(self, product_name: str, limit: int = 3) -> List[Dict]:
         """Encuentra alternativas más baratas usando la relación MAS_BARATO_QUE."""
         print(f"[NEO4J] 💰 Buscando alternativas más baratas que: '{product_name}' (límite: {limit})")
         # Primero buscar el producto de referencia
@@ -78,7 +78,7 @@ class Neo4jTool:
             print(f"[NEO4J] ⚠️  No se pudo encontrar producto de referencia: '{product_name}'")
             return []
         
-        print(f"[NEO4J] 📋 Precio de referencia: USD {reference['price']}")
+        print(f"[NEO4J] 📋 Precio de referencia: S/. {reference['price']}")
         query = """
         MATCH (p:Producto)
         WHERE p.price < $reference_price
@@ -104,7 +104,7 @@ class Neo4jTool:
                 "error": error_msg
             }
         
-        print(f"[NEO4J] 📊 Comparando: {p1['name']} (USD {p1['price']}) vs {p2['name']} (USD {p2['price']})")
+        print(f"[NEO4J] 📊 Comparando: {p1['name']} (S/. {p1['price']}) vs {p2['name']} (S/. {p2['price']})")
         
         # Obtener categorías de ambos productos
         query = """
@@ -131,10 +131,10 @@ class Neo4jTool:
             "cheaper": p1['name'] if p1['price'] < p2['price'] else p2['name']
         }
         
-        print(f"[NEO4J] ✅ Comparación completada - Diferencia: USD {result['price_difference']}")
+        print(f"[NEO4J] ✅ Comparación completada - Diferencia: S/. {result['price_difference']}")
         return result
     
-    def find_by_category(self, category: str, limit: int = 10) -> List[Dict]:
+    def find_by_category(self, category: str, limit: int = 4) -> List[Dict]:
         """Encuentra productos por categoría."""
         print(f"[NEO4J] 📂 Buscando productos por categoría: '{category}' (límite: {limit})")
         query = """
@@ -163,22 +163,22 @@ class Neo4jTool:
             return (
                 f"**Comparación de productos:**\n\n"
                 f"**{p1['name']}**\n"
-                f"- Precio: USD {p1['price']}\n"
+                f"- Precio: S/. {p1['price']}\n"
                 f"- Categorías: {', '.join(p1['categories'])}\n"
                 f"- Stock: {p1['stock_status']}\n\n"
                 f"**{p2['name']}**\n"
-                f"- Precio: USD {p2['price']}\n"
+                f"- Precio: S/. {p2['price']}\n"
                 f"- Categorías: {', '.join(p2['categories'])}\n"
                 f"- Stock: {p2['stock_status']}\n\n"
-                f"**Diferencia de precio:** USD {results['price_difference']}\n"
+                f"**Diferencia de precio:** S/. {results['price_difference']}\n"
                 f"**Más económico:** {results['cheaper']}"
             )
         
         # Formato general para listas de productos
         formatted = []
-        for i, product in enumerate(results[:10], 1):
+        for i, product in enumerate(results[:5], 1):
             formatted.append(
-                f"{i}. **{product['name']}** - USD {product['price']} "
+                f"{i}. **{product['name']}** - S/. {product['price']} "
                 f"(Stock: {product.get('stock_status', 'instock')})"
             )
         
