@@ -2,20 +2,15 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Tuple
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from langchain_community.chat_models import ChatOllama
 from langchain.agents import create_tool_calling_agent, AgentExecutor
-
+from metrics.prometheus_metrics import get_metrics
 from vector.vector import RETRIEVAL_TOOLS
 
-# Imports para health checks
-import os
-import re
-from typing import Tuple
+
 try:
     from vector.vector import _client
 except Exception:
@@ -40,13 +35,12 @@ SYSTEM_PROMPT = (
 
 app = FastAPI()
 
-DEFAULT_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()  # openai | ollama | gemini
+DEFAULT_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()  # only openai supported
 DEFAULT_MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")          # por proveedor
 DEFAULT_TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.2"))
 
 # (Opcional) URLs/keys por proveedor
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # requerido si usas gemini
+# Only OpenAI is supported now
 
 class ProductAgentRequest(BaseModel):
     text: str
@@ -70,23 +64,17 @@ def make_llm(
     temperature: float
 ):
     provider = (provider or DEFAULT_PROVIDER).lower()
-
     if provider == "openai":
-        # Requiere: OPENAI_API_KEY
         return ChatOpenAI(model=model, temperature=temperature)
 
-    if provider == "ollama":
-        # Requiere: Ollama corriendo localmente o remoto
-        # Modelos típicos: "llama3.1", "qwen2.5", "phi3", etc.
-        return ChatOllama(model=model, base_url=OLLAMA_BASE_URL, temperature=temperature)
+    raise ValueError(f"Proveedor LLM no soportado: {provider}. Solo 'openai' está soportado ahora.")
 
-    if provider == "gemini":
-        # Requiere: GOOGLE_API_KEY
-        if not GOOGLE_API_KEY:
-            raise RuntimeError("Falta GOOGLE_API_KEY para usar Gemini.")
-        return ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=GOOGLE_API_KEY)
 
-    raise ValueError(f"Proveedor LLM no soportado: {provider}. Usa: openai | ollama | gemini")
+# Prometheus metrics endpoint
+
+@app.get("/metrics")
+def metrics():
+    return get_metrics()
 
 @app.post("/products_agent_search", response_model=ProductAgentResponse)
 def products_agent_endpoint(req: ProductAgentRequest):

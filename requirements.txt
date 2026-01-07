@@ -28,13 +28,10 @@ openai>=1.37.0
 # ============================
 # Additional LLM providers
 # ============================
-# Gemini (Google Generative AI)
-langchain-google-genai>=0.1.6
-google-generativeai>=0.5.4
-
-# Ollama (local / self-hosted models)
-# Solo requiere tener Ollama corriendo, pero añadimos client opcional
-ollama>=0.1.9
+# Observability and simplified provider stack
+# We removed Gemini/Ollama to speed up local builds; use OpenAI only
+langfuse==3.0.9
+prometheus-client==0.20.0
 
 # ============================
 # Extra utilities

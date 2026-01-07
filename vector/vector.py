@@ -12,9 +12,7 @@ from qdrant_client import QdrantClient
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.vectorstores import Qdrant
 from langchain_core.tools import Tool
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.llms import Ollama
+# Removed Google/Ollama providers to simplify local builds; use OpenAI only
 
 # DeepAgent imports
 from deep_agent.planner import DeepAgentPlanner
@@ -28,23 +26,11 @@ load_dotenv()
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY") or None
 
-EMBEDDINGS_PROVIDER = os.getenv("EMBEDDINGS_PROVIDER", "ollama").lower()
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Selección dinámica de embeddings
-if EMBEDDINGS_PROVIDER == "openai":
-    EMB = OpenAIEmbeddings()
-    print("[INFO] Usando OpenAIEmbeddings para embeddings.")
-elif EMBEDDINGS_PROVIDER == "gemini":
-    EMB = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
-    print("[INFO] Usando GoogleGenerativeAIEmbeddings (Gemini) para embeddings.")
-else:
-    EMB = OllamaEmbeddings(base_url=OLLAMA_BASE_URL, model="nomic-embed-text")
-    print(f"[INFO] Usando OllamaEmbeddings para embeddings (modelo: nomic-embed-text, url: {OLLAMA_BASE_URL}).")
+# Use OpenAI embeddings only to simplify dependencies
+EMB = OpenAIEmbeddings()
+print("[INFO] Usando OpenAIEmbeddings para embeddings.")
 
 def _client() -> QdrantClient:
     return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
@@ -61,12 +47,8 @@ def get_llm():
     """
     Devuelve el LLM adecuado según LLM_PROVIDER para clasificación.
     """
-    if LLM_PROVIDER == "openai":
-        return ChatOpenAI(api_key=OPENAI_API_KEY, model="gpt-3.5-turbo")
-    elif LLM_PROVIDER == "gemini":
-        return ChatGoogleGenerativeAI(google_api_key=GOOGLE_API_KEY, model="gemini-2.5-flash")
-    else:
-        return Ollama(base_url=OLLAMA_BASE_URL, model=OLLAMA_MODEL)
+    # Use OpenAI only
+    return ChatOpenAI(api_key=OPENAI_API_KEY, model="gpt-3.5-turbo")
 
 def classify_query_category(query: str) -> str:
     """
