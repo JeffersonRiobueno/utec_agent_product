@@ -52,6 +52,7 @@ class ProductAgentRequest(BaseModel):
 
 class ProductAgentResponse(BaseModel):
     result: str
+    intermediate_steps: Optional[list] = None
 
 
 
@@ -141,21 +142,30 @@ def products_agent_endpoint(req: ProductAgentRequest):
         ("ai", "{agent_scratchpad}")
     ])
     agent = create_tool_calling_agent(llm, tools, prompt)
-    # Se elimina return_intermediate_steps=True para que el LLM procese la respuesta final
-    executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+    # Habilitamos return_intermediate_steps para poder extraer contexto en evaluaciones
+    executor = AgentExecutor(agent=agent, tools=tools, verbose=True, return_intermediate_steps=True)
     
     print(f"[API] Ejecutando agente con {len(tools)} herramientas disponibles")
     # Ejecuta el agente usando SOLO el texto del usuario (sin context_summary)
     result = executor.invoke({"input": req.text})
     
-    # Usar siempre la salida procesada por el LLM (result["output"])
-    if isinstance(result, dict) and "output" in result:
-        final_result = result["output"]
-    else:
-        final_result = str(result)
+    # Extraer la respuesta final
+    final_output = result.get("output", str(result))
+    # Extraer pasos intermedios (contexto de herramientas)
+    steps = result.get("intermediate_steps", [])
     
-    print(f"[API] Respuesta generada (longitud: {len(str(final_result))} caracteres)")
-    return ProductAgentResponse(result=str(final_result))
+    # Formatear pasos para serialización
+    serializable_steps = []
+    for step in steps:
+        action, observation = step
+        serializable_steps.append({
+            "tool": action.tool,
+            "tool_input": action.tool_input,
+            "observation": str(observation)
+        })
+
+    print(f"[API] Respuesta generada (longitud: {len(str(final_output))} caracteres)")
+    return ProductAgentResponse(result=str(final_output), intermediate_steps=serializable_steps)
     
     print(f"[API] Respuesta generada (longitud: {len(str(final_result))} caracteres)")
     return ProductAgentResponse(result=str(final_result))

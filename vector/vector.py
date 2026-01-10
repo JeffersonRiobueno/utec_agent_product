@@ -258,14 +258,14 @@ def deep_agent_search(*args, **kwargs) -> str:
         if plan_obj.query_type == 'similarity':
             ref_product = plan_obj.extracted_params.get('reference_product', '')
             print(f"[DEEP AGENT] 🔗 Buscando productos similares a: '{ref_product}'")
-            results = neo4j_tool.find_similar_products(ref_product, limit=5)
+            results = neo4j_tool.find_similar_products(ref_product, limit=4)
             print(f"[DEEP AGENT] ✅ Neo4j encontró {len(results)} productos similares")
             return results
         
         elif plan_obj.query_type == 'price_comparison':
             ref_product = plan_obj.extracted_params.get('reference_product', '')
             print(f"[DEEP AGENT] 💰 Buscando alternativas más baratas que: '{ref_product}'")
-            results = neo4j_tool.find_cheaper_alternatives(ref_product, limit=5)
+            results = neo4j_tool.find_cheaper_alternatives(ref_product, limit=4)
             print(f"[DEEP AGENT] ✅ Neo4j encontró {len(results)} alternativas más económicas")
             return results
         
@@ -281,7 +281,7 @@ def deep_agent_search(*args, **kwargs) -> str:
             use_case = plan_obj.extracted_params.get('use_case', '')
             print(f"[DEEP AGENT] 🎯 Generando recomendaciones para: '{use_case}'")
             # Intentar buscar por categoría inferida del caso de uso
-            results = neo4j_tool.find_by_category(use_case, limit=10)
+            results = neo4j_tool.find_by_category(use_case, limit=4)
             print(f"[DEEP AGENT] ✅ Neo4j encontró {len(results)} recomendaciones")
             return results
         

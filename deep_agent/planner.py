@@ -201,14 +201,15 @@ class DeepAgentPlanner:
             use_qdrant = True
         
         elif query_type == 'similarity':
-            # PASO 6: Similitud: usar relación SIMILAR_A en Neo4j
+            # PASO 6: Similitud: usar relación SIMILAR_A en Neo4j y complementar con Qdrant
             steps = [
                 f"1. Identificar producto de referencia: '{params.get('reference_product', '')}'",
                 "2. Consultar Neo4j: productos con relación SIMILAR_A",
-                "3. Filtrar por stock disponible",
-                "4. Ordenar por relevancia (misma categoría, precio similar)"
+                "3. Refinar con búsqueda semántica en Qdrant para mayor cobertura",
+                "4. Filtrar por stock disponible y consolidar resultados"
             ]
             use_neo4j = True
+            use_qdrant = True
         
         elif query_type == 'price_comparison':
             # PASO 6: Comparación de precio: usar relación MAS_BARATO_QUE en Neo4j
